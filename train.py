@@ -27,6 +27,7 @@ FID is intentionally not measured here — measure it yourself between checkpoin
 from __future__ import annotations
 
 import argparse
+import functools
 import threading
 import time
 from dataclasses import asdict
@@ -58,6 +59,8 @@ from src.model import (
     Generator,
     GeneratorConfig,
 )
+
+print = functools.partial(print, flush=True)
 
 
 def load_config(path: Path) -> dict:
