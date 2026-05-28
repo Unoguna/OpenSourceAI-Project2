@@ -1,0 +1,25 @@
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Local / OS metadata
+.DS_Store
+__MACOSX/
+
+# Large data and checkpoints stay in Google Drive
+ckpt/
+data/
+runs/
+eval_runs/
+eval_quick/
+eval_final/
+project2_outputs/
+*.pt
+*.pth
+*.onnx
+*.zip
+
+# Generated samples and reports
+sample_*.png
+submission.onnx
+*_project02.zip
