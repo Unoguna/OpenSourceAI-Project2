@@ -64,7 +64,7 @@ training:
 wandb:
   project: ffhqgen-student
   name: my_run
-  mode: online                            # online | offline | disabled
+  mode: disabled                          # online | offline | disabled
 
 out:
   run_dir: runs/my_run

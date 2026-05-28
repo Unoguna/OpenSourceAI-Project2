@@ -333,7 +333,9 @@ def main() -> None:
 
     # wandb
     wandb_cfg = cfg.get("wandb", {})
-    wandb_mode = wandb_cfg.get("mode", "online") if _HAS_WANDB else "disabled"
+    wandb_mode = wandb_cfg.get("mode", "disabled") if _HAS_WANDB else "disabled"
+    if wandb_mode not in ("online", "offline", "disabled"):
+        raise ValueError(f"wandb.mode must be online, offline, or disabled; got {wandb_mode!r}")
     run = None
     if wandb_mode != "disabled":
         init_kwargs = {

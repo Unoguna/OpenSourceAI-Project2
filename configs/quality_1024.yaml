@@ -66,7 +66,7 @@ training:
 wandb:
   project: ffhqgen-student
   name: quality_1024
-  mode: online
+  mode: disabled
 
 out:
   run_dir: runs/quality_1024
