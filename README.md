@@ -78,11 +78,14 @@ MyDrive/project2_data/
   valid_10k_256.zip
   valid_10k_512.zip
   valid_10k_1024.zip
+  ffhq256_baseline.pt
 ```
 
 The training configs use the 512 and 1024 training zips directly. FID evaluation
 uses `valid_10k_1024.zip`; `eval_checkpoints.py --real-zip ...` extracts it
 under the evaluation output directory before running `pytorch-fid`.
+The Colab notebook copies `ffhq256_baseline.pt` from Drive into
+`ckpt/ffhq256_baseline.pt` after cloning the GitHub repo.
 
 ## Architecture (`src/model.py`)
 
