@@ -46,7 +46,7 @@ python train.py --config configs/baseline_256.yaml \
 #    train.py can warm-start the shared trunk from the 256 baseline.
 python train.py --config configs/baseline_512.yaml \
                        --init-from ckpt/ffhq256_baseline.pt
-python train.py --config configs/baseline_1024.yaml \
+python train.py --config configs/stable_1024.yaml \
                        --init-from runs/pg_512/final.pt
 ```
 
@@ -130,7 +130,7 @@ python train.py --config configs/baseline_512.yaml \
                 --init-from ckpt/ffhq256_baseline.pt
 
 # Stage 2: train 1024 from the best 512 checkpoint.
-python train.py --config configs/baseline_1024.yaml \
+python train.py --config configs/stable_1024.yaml \
                 --init-from runs/pg_512/final.pt
 ```
 
@@ -225,6 +225,7 @@ submitting the final one.
 ```bash
 # Check that a config stays under the 40M generator limit.
 python count_params.py --config configs/baseline_1024.yaml
+python count_params.py --config configs/stable_1024.yaml
 python count_params.py --config configs/quality_1024.yaml
 
 # Generate individual PNGs for visual inspection or FID.
