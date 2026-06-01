@@ -32,9 +32,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm as _sn
 
-from src.stylegan import StyleGenerator, StyleGeneratorConfig
-
-
 # =============================================================================
 # Config
 # =============================================================================
@@ -348,15 +345,11 @@ def build_baseline_256_discriminator() -> Discriminator:
     return Discriminator(BASELINE_256_DISCRIMINATOR_CONFIG)
 
 
-def build_generator_config(d: dict[str, Any]) -> GeneratorConfig | StyleGeneratorConfig:
-    if d.get("architecture", "resnet") == "stylegan_lite":
-        return StyleGeneratorConfig.from_dict(d)
+def build_generator_config(d: dict[str, Any]) -> GeneratorConfig:
     return GeneratorConfig.from_dict(d)
 
 
-def build_generator(cfg: GeneratorConfig | StyleGeneratorConfig) -> Generator | StyleGenerator:
-    if isinstance(cfg, StyleGeneratorConfig):
-        return StyleGenerator(cfg)
+def build_generator(cfg: GeneratorConfig) -> Generator:
     return Generator(cfg)
 
 

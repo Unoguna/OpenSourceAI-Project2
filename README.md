@@ -44,10 +44,10 @@ python train.py --config configs/baseline_256.yaml \
 
 # 3. Progressive scale-up. This package includes 512 / 1024 configs and
 #    train.py can warm-start the shared trunk from the 256 baseline.
-python train.py --config configs/baseline_512.yaml \
+python train.py --config configs/stable_512.yaml \
                        --init-from ckpt/ffhq256_baseline.pt
 python train.py --config configs/stable_1024.yaml \
-                       --init-from runs/pg_512/final.pt
+                       --init-from runs/stable_512/final.pt
 ```
 
 ## Recommended Colab workflow
@@ -130,12 +130,12 @@ Suggested training order:
 python generate.py --ckpt ckpt/ffhq256_baseline.pt --n 64 --out sample_256.png
 
 # Stage 1: train 512 from the provided 256 baseline.
-python train.py --config configs/baseline_512.yaml \
+python train.py --config configs/stable_512.yaml \
                 --init-from ckpt/ffhq256_baseline.pt
 
 # Stage 2: train 1024 from the best 512 checkpoint.
 python train.py --config configs/stable_1024.yaml \
-                --init-from runs/pg_512/final.pt
+                --init-from runs/stable_512/final.pt
 ```
 
 For the leaderboard submission, your trained model only has to satisfy the
@@ -258,33 +258,8 @@ choice.
 
 `wide_1024.yaml` is the recommended follow-up when `stable_1024` underfits. It
 keeps the trained 512 trunk unchanged and widens only the new 1024 block from
-32 to 64 channels. Start it from the best `pg_512` checkpoint rather than
+32 to 64 channels. Start it from the best `stable_512` checkpoint rather than
 resuming a structurally different 1024 checkpoint.
-
-## StyleGAN-lite experiment
-
-The repository also includes a separate StyleGAN-inspired generator implemented
-from scratch in `src/stylegan.py`. It uses a mapping network, learned constant
-input, per-layer style modulation, noise injection during training, and
-progressive synthesis blocks. Existing ResNet checkpoints remain untouched.
-
-Start at 256 and expand only when the FID and sample grid are promising:
-
-```bash
-python train.py --config configs/stylegan_lite_256.yaml --total-images 500000
-python eval_checkpoints.py --ckpts runs/stylegan_lite_256/final.pt \
-                           --real-zip data/valid_10k_256.zip \
-                           --out-dir eval_stylegan_lite_256 \
-                           --n 1000 --batch-size 8
-
-python train.py --config configs/stylegan_lite_512.yaml \
-                --init-from runs/stylegan_lite_256/final.pt
-python train.py --config configs/stylegan_lite_1024.yaml \
-                --init-from runs/stylegan_lite_512/final.pt
-```
-
-This is an optional comparison path, not a replacement for the preserved ResNet
-checkpoints.
 
 ## Resuming your own run
 
