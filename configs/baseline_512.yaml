@@ -64,7 +64,7 @@ training:
 wandb:
   project: ffhqgen-student
   name: pg_512
-  mode: disabled
+  mode: online
 
 out:
   run_dir: runs/pg_512

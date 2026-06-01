@@ -68,6 +68,10 @@ edit    -> VS Code
 5. Checkpoints, samples, FID results, and `submission.onnx` are written to
    `MyDrive/project2_outputs`.
 
+The Colab notebook includes a WandB login cell. Create a free WandB account,
+run `wandb.login()` once per Colab runtime, and keep the run Overview page plus
+loss/sample screenshots for the report.
+
 Recommended Drive data layout:
 
 ```text
