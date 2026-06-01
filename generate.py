@@ -13,17 +13,17 @@ import torchvision.utils as vutils
 from torchvision.transforms.functional import to_pil_image
 
 from src.model import (
-    Generator,
-    GeneratorConfig,
+    build_generator,
+    build_generator_config,
     build_baseline_256_generator,
 )
 
 
-def load_generator(ckpt_path: Path, device: str, use_ema: bool) -> Generator:
+def load_generator(ckpt_path: Path, device: str, use_ema: bool) -> torch.nn.Module:
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     if "meta" in ckpt and isinstance(ckpt["meta"], dict) and "generator_config" in ckpt["meta"]:
-        g_cfg = GeneratorConfig.from_dict(ckpt["meta"]["generator_config"])
-        G = Generator(g_cfg).to(device).eval()
+        g_cfg = build_generator_config(ckpt["meta"]["generator_config"])
+        G = build_generator(g_cfg).to(device).eval()
         source_note = f"meta.generator_config (z_dim={g_cfg.z_dim}, max_res={g_cfg.resolutions[-1]})"
     else:
         G = build_baseline_256_generator().to(device).eval()

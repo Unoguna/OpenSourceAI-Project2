@@ -20,7 +20,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.model import Generator, GeneratorConfig, build_baseline_256_generator
+from src.model import build_generator, build_generator_config, build_baseline_256_generator
 
 
 TARGET_RESOLUTION = 1024
@@ -88,8 +88,8 @@ def _load_generator_from_ckpt(ckpt_path: Path) -> nn.Module:
     """Load G_ema from either the 256 baseline or a train.py checkpoint."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     if "meta" in ckpt and isinstance(ckpt["meta"], dict) and "generator_config" in ckpt["meta"]:
-        g_cfg = GeneratorConfig.from_dict(ckpt["meta"]["generator_config"])
-        G = Generator(g_cfg)
+        g_cfg = build_generator_config(ckpt["meta"]["generator_config"])
+        G = build_generator(g_cfg)
         print(f"Architecture: checkpoint meta (max_res={g_cfg.resolutions[-1]})")
     else:
         G = build_baseline_256_generator()

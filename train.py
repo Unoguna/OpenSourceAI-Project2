@@ -58,6 +58,8 @@ from src.model import (
     EMA,
     Generator,
     GeneratorConfig,
+    build_generator,
+    build_generator_config,
 )
 
 print = functools.partial(print, flush=True)
@@ -105,7 +107,7 @@ def build_checkpoint(
     G_ema: EMA,
     optG: torch.optim.Optimizer,
     optD: torch.optim.Optimizer,
-    g_cfg: GeneratorConfig,
+    g_cfg,
     d_cfg: DiscriminatorConfig,
     training_cfg: dict,
     wandb_run_id: str | None,
@@ -157,18 +159,23 @@ def _remap_discriminator_by_resolution(
     target_cfg: DiscriminatorConfig,
 ) -> dict[str, torch.Tensor]:
     """Map D stage indices when higher-resolution blocks are prepended."""
-    source_stage_by_out_res = {
-        source_cfg.resolutions[i]: i - 1
-        for i in range(1, len(source_cfg.resolutions))
-    }
-    target_stage_by_out_res = {
-        target_cfg.resolutions[i]: i - 1
-        for i in range(1, len(target_cfg.resolutions))
-    }
+    def module_positions(cfg: DiscriminatorConfig) -> dict[tuple[str, int], int]:
+        positions: dict[tuple[str, int], int] = {}
+        module_idx = 0
+        for out_res in cfg.resolutions[1:]:
+            positions[("block", out_res)] = module_idx
+            module_idx += 1
+            if out_res in cfg.attention_resolutions:
+                positions[("attention", out_res)] = module_idx
+                module_idx += 1
+        return positions
+
+    source_positions = module_positions(source_cfg)
+    target_positions = module_positions(target_cfg)
     stage_map = {
-        source_stage: target_stage_by_out_res[out_res]
-        for out_res, source_stage in source_stage_by_out_res.items()
-        if out_res in target_stage_by_out_res
+        source_idx: target_positions[role_and_res]
+        for role_and_res, source_idx in source_positions.items()
+        if role_and_res in target_positions
     }
 
     remapped: dict[str, torch.Tensor] = {}
@@ -254,9 +261,9 @@ def main() -> None:
     torch.backends.cudnn.benchmark = True
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    g_cfg = GeneratorConfig.from_dict(cfg["generator"])
+    g_cfg = build_generator_config(cfg["generator"])
     d_cfg = DiscriminatorConfig.from_dict(cfg["discriminator"])
-    G = Generator(g_cfg).to(device)
+    G = build_generator(g_cfg).to(device)
     D = Discriminator(d_cfg).to(device)
     print(f"Generator: {sum(p.numel() for p in G.parameters())/1e6:.2f}M params")
     print(f"Discriminator: {sum(p.numel() for p in D.parameters())/1e6:.2f}M params")

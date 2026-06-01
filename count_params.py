@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 import yaml
 
-from src.model import Discriminator, DiscriminatorConfig, Generator, GeneratorConfig
+from src.model import Discriminator, DiscriminatorConfig, build_generator, build_generator_config
 
 
 def count(module: torch.nn.Module) -> int:
@@ -26,17 +26,17 @@ def main() -> None:
     if args.config is not None:
         with args.config.open("r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
-        g_cfg = GeneratorConfig.from_dict(cfg["generator"])
+        g_cfg = build_generator_config(cfg["generator"])
         d_cfg = DiscriminatorConfig.from_dict(cfg["discriminator"])
     else:
         ckpt = torch.load(args.ckpt, map_location="cpu", weights_only=False)
         meta = ckpt.get("meta", {})
         if "generator_config" not in meta or "discriminator_config" not in meta:
             raise SystemExit("Checkpoint does not contain meta.generator_config/discriminator_config")
-        g_cfg = GeneratorConfig.from_dict(meta["generator_config"])
+        g_cfg = build_generator_config(meta["generator_config"])
         d_cfg = DiscriminatorConfig.from_dict(meta["discriminator_config"])
 
-    G = Generator(g_cfg)
+    G = build_generator(g_cfg)
     D = Discriminator(d_cfg)
     g_params = count(G)
     d_params = count(D)
