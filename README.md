@@ -46,7 +46,7 @@ python train.py --config configs/baseline_256.yaml \
 #    train.py can warm-start the shared trunk from the 256 baseline.
 python train.py --config configs/stable_512.yaml \
                        --init-from ckpt/ffhq256_baseline.pt
-python train.py --config configs/stable_1024.yaml \
+python train.py --config configs/stable_1024_ultralow.yaml \
                        --init-from runs/stable_512/final.pt
 ```
 
@@ -134,7 +134,7 @@ python train.py --config configs/stable_512.yaml \
                 --init-from ckpt/ffhq256_baseline.pt
 
 # Stage 2: train 1024 from the best 512 checkpoint.
-python train.py --config configs/stable_1024.yaml \
+python train.py --config configs/stable_1024_ultralow.yaml \
                 --init-from runs/stable_512/final.pt
 ```
 
@@ -235,19 +235,17 @@ python eval_checkpoints.py --ckpts ckpt/ffhq256_baseline.pt \
 
 # Check that a config stays under the 40M generator limit.
 python count_params.py --config configs/baseline_1024.yaml
-python count_params.py --config configs/stable_1024.yaml
 python count_params.py --config configs/stable_1024_lowlr.yaml
-python count_params.py --config configs/wide_1024.yaml
-python count_params.py --config configs/quality_1024.yaml
+python count_params.py --config configs/stable_1024_ultralow.yaml
 
 # Generate individual PNGs for visual inspection or FID.
-python generate.py --ckpt runs/pg_1024/final.pt \
+python generate.py --ckpt runs/stable_1024_ultralow/final.pt \
                    --out sample_grid.png \
-                   --out-dir eval_samples/pg_1024_final \
+                   --out-dir eval_samples/stable_1024_ultralow_final \
                    --n 128 --batch-size 4
 
 # Compare checkpoints. Use a real validation image directory when available.
-python eval_checkpoints.py --ckpts runs/pg_1024/ckpt_*.pt runs/quality_1024/ckpt_*.pt \
+python eval_checkpoints.py --ckpts runs/stable_1024_ultralow/ckpt_*.pt runs/stable_1024_lowlr/ckpt_*.pt \
                            --real-zip data/valid_10k_1024.zip \
                            --out-dir eval_runs \
                            --n 5000 --batch-size 4
@@ -257,15 +255,14 @@ python eval_checkpoints.py --ckpts runs/pg_1024/ckpt_*.pt runs/quality_1024/ckpt
 Use the best FID together with the saved sample grids for the final checkpoint
 choice.
 
-`wide_1024.yaml` is the recommended follow-up when `stable_1024` underfits. It
-keeps the trained 512 trunk unchanged and widens only the new 1024 block from
-32 to 64 channels. Start it from the best `stable_512` checkpoint rather than
-resuming a structurally different 1024 checkpoint.
-
 `stable_1024_lowlr.yaml` is a short diagnostic run for unstable 1024 expansion.
 It keeps the stable architecture but lowers both G and D learning rates to
 `5e-5`. Start it from the best `stable_512` checkpoint and inspect FID after
 100k images before extending the run.
+
+`stable_1024_ultralow.yaml` is the current recommended 1024 experiment. It lowers
+both G and D learning rates further to `2e-5`, saves every 10k images, and is
+intended for selecting an early 1024 checkpoint before quality degrades.
 
 ## Resuming your own run
 
