@@ -236,6 +236,7 @@ python eval_checkpoints.py --ckpts ckpt/ffhq256_baseline.pt \
 # Check that a config stays under the 40M generator limit.
 python count_params.py --config configs/baseline_1024.yaml
 python count_params.py --config configs/stable_1024.yaml
+python count_params.py --config configs/stable_1024_lowlr.yaml
 python count_params.py --config configs/wide_1024.yaml
 python count_params.py --config configs/quality_1024.yaml
 
@@ -260,6 +261,11 @@ choice.
 keeps the trained 512 trunk unchanged and widens only the new 1024 block from
 32 to 64 channels. Start it from the best `stable_512` checkpoint rather than
 resuming a structurally different 1024 checkpoint.
+
+`stable_1024_lowlr.yaml` is a short diagnostic run for unstable 1024 expansion.
+It keeps the stable architecture but lowers both G and D learning rates to
+`5e-5`. Start it from the best `stable_512` checkpoint and inspect FID after
+100k images before extending the run.
 
 ## Resuming your own run
 
