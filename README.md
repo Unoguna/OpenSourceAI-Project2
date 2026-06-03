@@ -72,6 +72,10 @@ The Colab notebook includes a WandB login cell. Create a free WandB account,
 run `wandb.login()` once per Colab runtime, and keep the run Overview page plus
 loss/sample screenshots for the report.
 
+In Colab, the notebook copies tracked YAML files into `runtime_configs/` before
+patching Drive paths. This keeps `configs/*.yaml` clean, so later `git pull`
+commands do not fail because of local config edits.
+
 Recommended Drive data layout:
 
 ```text

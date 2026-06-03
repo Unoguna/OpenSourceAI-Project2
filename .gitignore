@@ -10,6 +10,7 @@ __MACOSX/
 ckpt/
 data/
 runs/
+runtime_configs/
 eval_runs/
 eval_quick/
 eval_final/
