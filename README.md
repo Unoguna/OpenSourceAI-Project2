@@ -239,6 +239,7 @@ python count_params.py --config configs/stable_1024_lowlr.yaml
 python count_params.py --config configs/stable_1024_ultralow.yaml
 python count_params.py --config configs/stable_1024_minlr.yaml
 python count_params.py --config configs/stable_1024_freeze_minlr.yaml
+python count_params.py --config configs/stable_1024_freeze_ttur.yaml
 
 # Generate individual PNGs for visual inspection or FID.
 python generate.py --ckpt runs/stable_1024_ultralow/final.pt \
@@ -247,7 +248,7 @@ python generate.py --ckpt runs/stable_1024_ultralow/final.pt \
                    --n 128 --batch-size 4
 
 # Compare checkpoints. Use a real validation image directory when available.
-python eval_checkpoints.py --ckpts runs/stable_1024_freeze_minlr/ckpt_*.pt runs/stable_1024_minlr/ckpt_*.pt runs/stable_1024_ultralow/ckpt_*.pt runs/stable_1024_lowlr/ckpt_*.pt \
+python eval_checkpoints.py --ckpts runs/stable_1024_freeze_ttur/ckpt_*.pt runs/stable_1024_freeze_minlr/ckpt_*.pt runs/stable_1024_minlr/ckpt_*.pt runs/stable_1024_ultralow/ckpt_*.pt runs/stable_1024_lowlr/ckpt_*.pt \
                            --real-zip data/valid_10k_1024.zip \
                            --out-dir eval_runs \
                            --n 5000 --batch-size 4
@@ -273,6 +274,10 @@ peak. It uses `1e-5`, saves every 5k images, and stops at 20k images.
 the copied 512-and-below generator trunk. Only the new 1024 generator block and
 output layer are trained, which helps preserve the best 512 checkpoint while
 adapting the final resolution.
+
+`stable_1024_freeze_ttur.yaml` is the final short comparison run. It keeps the
+freeze schedule but uses TTUR (`lr_g=1e-5`, `lr_d=5e-6`) so the discriminator
+adapts more slowly than the generator.
 
 ## Resuming your own run
 
