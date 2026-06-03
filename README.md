@@ -46,7 +46,7 @@ python train.py --config configs/baseline_256.yaml \
 #    train.py can warm-start the shared trunk from the 256 baseline.
 python train.py --config configs/stable_512.yaml \
                        --init-from ckpt/ffhq256_baseline.pt
-python train.py --config configs/stable_1024_ultralow.yaml \
+python train.py --config configs/stable_1024_fadein.yaml \
                        --init-from runs/stable_512/final.pt
 ```
 
@@ -134,7 +134,7 @@ python train.py --config configs/stable_512.yaml \
                 --init-from ckpt/ffhq256_baseline.pt
 
 # Stage 2: train 1024 from the best 512 checkpoint.
-python train.py --config configs/stable_1024_ultralow.yaml \
+python train.py --config configs/stable_1024_fadein.yaml \
                 --init-from runs/stable_512/final.pt
 ```
 
@@ -235,20 +235,16 @@ python eval_checkpoints.py --ckpts ckpt/ffhq256_baseline.pt \
 
 # Check that a config stays under the 40M generator limit.
 python count_params.py --config configs/baseline_1024.yaml
-python count_params.py --config configs/stable_1024_lowlr.yaml
-python count_params.py --config configs/stable_1024_ultralow.yaml
-python count_params.py --config configs/stable_1024_minlr.yaml
-python count_params.py --config configs/stable_1024_freeze_minlr.yaml
-python count_params.py --config configs/stable_1024_freeze_ttur.yaml
+python count_params.py --config configs/stable_1024_fadein.yaml
 
 # Generate individual PNGs for visual inspection or FID.
-python generate.py --ckpt runs/stable_1024_ultralow/final.pt \
+python generate.py --ckpt runs/stable_1024_fadein/final.pt \
                    --out sample_grid.png \
-                   --out-dir eval_samples/stable_1024_ultralow_final \
+                   --out-dir eval_samples/stable_1024_fadein_final \
                    --n 128 --batch-size 4
 
 # Compare checkpoints. Use a real validation image directory when available.
-python eval_checkpoints.py --ckpts runs/stable_1024_freeze_ttur/ckpt_*.pt runs/stable_1024_freeze_minlr/ckpt_*.pt runs/stable_1024_minlr/ckpt_*.pt runs/stable_1024_ultralow/ckpt_*.pt runs/stable_1024_lowlr/ckpt_*.pt \
+python eval_checkpoints.py --ckpts runs/stable_1024_fadein/ckpt_*.pt \
                            --real-zip data/valid_10k_1024.zip \
                            --out-dir eval_runs \
                            --n 5000 --batch-size 4
@@ -258,26 +254,10 @@ python eval_checkpoints.py --ckpts runs/stable_1024_freeze_ttur/ckpt_*.pt runs/s
 Use the best FID together with the saved sample grids for the final checkpoint
 choice.
 
-`stable_1024_lowlr.yaml` is a short diagnostic run for unstable 1024 expansion.
-It keeps the stable architecture but lowers both G and D learning rates to
-`5e-5`. Start it from the best `stable_512` checkpoint and inspect FID after
-100k images before extending the run.
-
-`stable_1024_ultralow.yaml` is the current recommended 1024 experiment. It lowers
-both G and D learning rates further to `2e-5`, saves every 10k images, and is
-intended for selecting an early 1024 checkpoint before quality degrades.
-
-`stable_1024_minlr.yaml` is an even shorter follow-up around the observed early
-peak. It uses `1e-5`, saves every 5k images, and stops at 20k images.
-
-`stable_1024_freeze_minlr.yaml` keeps the same short `1e-5` schedule but freezes
-the copied 512-and-below generator trunk. Only the new 1024 generator block and
-output layer are trained, which helps preserve the best 512 checkpoint while
-adapting the final resolution.
-
-`stable_1024_freeze_ttur.yaml` is the final short comparison run. It keeps the
-freeze schedule but uses TTUR (`lr_g=1e-5`, `lr_d=5e-6`) so the discriminator
-adapts more slowly than the generator.
+`stable_1024_fadein.yaml` is the recommended 1024 experiment. It freezes the
+copied 512-and-below generator trunk, trains the new 1024 block with TTUR, and
+uses progressive fade-in: the discriminator initially sees mostly the upsampled
+512 output, then gradually transitions to the native 1024 output.
 
 ## Resuming your own run
 

@@ -108,6 +108,28 @@ def count_trainable_params(module: torch.nn.Module) -> int:
     return sum(p.numel() for p in module.parameters() if p.requires_grad)
 
 
+def fadein_alpha(images_seen: int, train_cfg: dict) -> float:
+    fadein_images = int(train_cfg.get("fadein_images", 0) or 0)
+    if fadein_images <= 0:
+        return 1.0
+    start = float(train_cfg.get("fadein_alpha_start", 0.0))
+    return min(1.0, max(start, images_seen / fadein_images))
+
+
+def generate_fake(
+    G: torch.nn.Module,
+    z: torch.Tensor,
+    *,
+    images_seen: int,
+    train_cfg: dict,
+) -> tuple[torch.Tensor, float]:
+    low_resolution = train_cfg.get("fadein_low_resolution")
+    if low_resolution is None:
+        return G(z), 1.0
+    alpha = fadein_alpha(images_seen, train_cfg)
+    return G.forward_fadein(z, alpha=alpha, low_resolution=int(low_resolution)), alpha
+
+
 @torch.no_grad()
 def save_sample_grid(G: torch.nn.Module, sample_z: torch.Tensor, out_path: Path, nrow: int = 8) -> None:
     G.eval()
@@ -404,6 +426,13 @@ def main() -> None:
     print(f"Precision: {precision} ({'autocast bf16' if use_amp else 'fp32 throughout'})")
     augment_policy = train_cfg.get("augment", "") or ""
     print(f"Augment policy: {augment_policy!r}")
+    if train_cfg.get("fadein_low_resolution") is not None:
+        print(
+            "Fade-in: "
+            f"low_resolution={train_cfg['fadein_low_resolution']} "
+            f"fadein_images={train_cfg.get('fadein_images', 0)} "
+            f"alpha_start={train_cfg.get('fadein_alpha_start', 0.0)}"
+        )
 
     last_ckpt = images_seen
     save_threads: list[threading.Thread] = []
@@ -424,7 +453,9 @@ def main() -> None:
         z = torch.randn(b, z_dim, device=device)
         with torch.autocast(device_type=device, dtype=amp_dtype, enabled=use_amp):
             with torch.no_grad():
-                fake = G(z)
+                fake, alpha = generate_fake(
+                    G, z, images_seen=images_seen, train_cfg=train_cfg
+                )
             d_real = D(diff_augment(real, augment_policy))
             d_fake = D(diff_augment(fake.detach(), augment_policy))
             l_d_real = F.softplus(-d_real).mean()
@@ -448,7 +479,9 @@ def main() -> None:
         # --- G step ---
         z = torch.randn(b, z_dim, device=device)
         with torch.autocast(device_type=device, dtype=amp_dtype, enabled=use_amp):
-            fake = G(z)
+            fake, alpha = generate_fake(
+                G, z, images_seen=images_seen, train_cfg=train_cfg
+            )
             d_fake_g = D(diff_augment(fake, augment_policy))
             l_g = ns_logistic_g(d_fake_g)
         optG.zero_grad(set_to_none=True)
@@ -482,6 +515,7 @@ def main() -> None:
                 "grad_norm/G": grad_norm_g,
                 "grad_norm/D": grad_norm_d,
                 "lr": optG.param_groups[0]["lr"],
+                "fadein/alpha": alpha,
             }
             if last_r1_value is not None:
                 log["loss/R1"] = last_r1_value

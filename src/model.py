@@ -247,6 +247,36 @@ class Generator(nn.Module):
         h = F.relu(self.out_norm(h))
         return torch.tanh(self.to_rgb(h))
 
+    def forward_fadein(
+        self,
+        z: torch.Tensor,
+        *,
+        alpha: float,
+        low_resolution: int,
+    ) -> torch.Tensor:
+        """Blend an upsampled lower-resolution output with the final output."""
+        h = self.input_proj(z).view(-1, self.first_ch, self.first_res, self.first_res)
+        low_rgb: torch.Tensor | None = None
+
+        for stage, out_res in zip(self.stages, self.stage_output_resolutions):
+            h = stage(h)
+            if int(out_res) == int(low_resolution):
+                h_low = F.relu(self.out_norm(h))
+                low_rgb = torch.tanh(self.to_rgb(h_low))
+
+        if low_rgb is None:
+            raise ValueError(f"Generator has no stage at low_resolution={low_resolution}")
+
+        h_high = F.relu(self.out_norm(h))
+        high_rgb = torch.tanh(self.to_rgb(h_high))
+        low_up = F.interpolate(
+            low_rgb,
+            size=high_rgb.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+        )
+        return low_up.lerp(high_rgb, float(alpha))
+
 
 class Discriminator(nn.Module):
     """Config-driven ResNet downsample stack with SN + optional SA."""

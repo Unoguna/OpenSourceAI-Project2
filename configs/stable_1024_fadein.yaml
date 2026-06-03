@@ -35,7 +35,7 @@ training:
   train_zip: data/train_50k_1024.zip
   resolution: 1024
   batch_size: 4
-  total_images: 20_000
+  total_images: 40_000
   num_workers: 8
   flip: true
 
@@ -58,16 +58,19 @@ training:
 
   ckpt_every: 5_000
   freeze_g_below_resolution: 1024
+  fadein_low_resolution: 512
+  fadein_images: 20_000
+  fadein_alpha_start: 0.05
 
   log_every: 10
   sample_n: 16
   sample_seed: 12345
-  seed: 51
+  seed: 52
 
 wandb:
   project: ffhqgen-student
-  name: stable_1024_freeze_ttur
+  name: stable_1024_fadein
   mode: online
 
 out:
-  run_dir: runs/stable_1024_freeze_ttur
+  run_dir: runs/stable_1024_fadein
