@@ -238,6 +238,7 @@ python count_params.py --config configs/baseline_1024.yaml
 python count_params.py --config configs/stable_1024_lowlr.yaml
 python count_params.py --config configs/stable_1024_ultralow.yaml
 python count_params.py --config configs/stable_1024_minlr.yaml
+python count_params.py --config configs/stable_1024_freeze_minlr.yaml
 
 # Generate individual PNGs for visual inspection or FID.
 python generate.py --ckpt runs/stable_1024_ultralow/final.pt \
@@ -246,7 +247,7 @@ python generate.py --ckpt runs/stable_1024_ultralow/final.pt \
                    --n 128 --batch-size 4
 
 # Compare checkpoints. Use a real validation image directory when available.
-python eval_checkpoints.py --ckpts runs/stable_1024_minlr/ckpt_*.pt runs/stable_1024_ultralow/ckpt_*.pt runs/stable_1024_lowlr/ckpt_*.pt \
+python eval_checkpoints.py --ckpts runs/stable_1024_freeze_minlr/ckpt_*.pt runs/stable_1024_minlr/ckpt_*.pt runs/stable_1024_ultralow/ckpt_*.pt runs/stable_1024_lowlr/ckpt_*.pt \
                            --real-zip data/valid_10k_1024.zip \
                            --out-dir eval_runs \
                            --n 5000 --batch-size 4
@@ -267,6 +268,11 @@ intended for selecting an early 1024 checkpoint before quality degrades.
 
 `stable_1024_minlr.yaml` is an even shorter follow-up around the observed early
 peak. It uses `1e-5`, saves every 5k images, and stops at 20k images.
+
+`stable_1024_freeze_minlr.yaml` keeps the same short `1e-5` schedule but freezes
+the copied 512-and-below generator trunk. Only the new 1024 generator block and
+output layer are trained, which helps preserve the best 512 checkpoint while
+adapting the final resolution.
 
 ## Resuming your own run
 

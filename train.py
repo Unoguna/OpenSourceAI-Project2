@@ -89,6 +89,25 @@ def async_save_checkpoint(path: Path, state: dict) -> threading.Thread:
     return t
 
 
+def freeze_generator_below_resolution(G: torch.nn.Module, min_resolution: int) -> None:
+    """Freeze the copied trunk and train only high-resolution generator layers."""
+    for p in G.parameters():
+        p.requires_grad_(False)
+
+    trainable_prefixes: set[str] = {"out_norm", "to_rgb"}
+    for idx, out_res in enumerate(getattr(G, "stage_output_resolutions", [])):
+        if int(out_res) >= min_resolution:
+            trainable_prefixes.add(f"stages.{idx}")
+
+    for name, p in G.named_parameters():
+        if any(name.startswith(prefix) for prefix in trainable_prefixes):
+            p.requires_grad_(True)
+
+
+def count_trainable_params(module: torch.nn.Module) -> int:
+    return sum(p.numel() for p in module.parameters() if p.requires_grad)
+
+
 @torch.no_grad()
 def save_sample_grid(G: torch.nn.Module, sample_z: torch.Tensor, out_path: Path, nrow: int = 8) -> None:
     G.eval()
@@ -267,6 +286,15 @@ def main() -> None:
     D = Discriminator(d_cfg).to(device)
     print(f"Generator: {sum(p.numel() for p in G.parameters())/1e6:.2f}M params")
     print(f"Discriminator: {sum(p.numel() for p in D.parameters())/1e6:.2f}M params")
+
+    freeze_g_below_resolution = train_cfg.get("freeze_g_below_resolution")
+    if freeze_g_below_resolution is not None:
+        freeze_generator_below_resolution(G, int(freeze_g_below_resolution))
+        print(
+            "Generator trainable params after freeze: "
+            f"{count_trainable_params(G)/1e6:.2f}M "
+            f"(resolution >= {int(freeze_g_below_resolution)})"
+        )
 
     lr_g = float(train_cfg.get("lr_g", train_cfg.get("lr")))
     lr_d = float(train_cfg.get("lr_d", train_cfg.get("lr")))

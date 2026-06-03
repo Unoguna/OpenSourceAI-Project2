@@ -222,6 +222,7 @@ class Generator(nn.Module):
         self.input_proj = nn.Linear(cfg.z_dim, first_ch * first_res * first_res)
 
         stages: list[nn.Module] = []
+        stage_output_resolutions: list[int] = []
         for i in range(1, len(cfg.resolutions)):
             res_out = cfg.resolutions[i]
             in_ch = cfg.channels[cfg.resolutions[i - 1]]
@@ -229,9 +230,12 @@ class Generator(nn.Module):
             stages.append(
                 ResBlockUp(in_ch, out_ch, norm_type=cfg.norm_type, gn_groups=cfg.gn_groups)
             )
+            stage_output_resolutions.append(res_out)
             if res_out in cfg.attention_resolutions:
                 stages.append(SelfAttention2d(out_ch, use_spectral_norm=False))
+                stage_output_resolutions.append(res_out)
         self.stages = nn.Sequential(*stages)
+        self.stage_output_resolutions = stage_output_resolutions
 
         last_ch = cfg.channels[cfg.resolutions[-1]]
         self.out_norm = make_norm(last_ch, cfg.norm_type, cfg.gn_groups)
