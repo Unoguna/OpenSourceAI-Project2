@@ -237,6 +237,7 @@ python eval_checkpoints.py --ckpts ckpt/ffhq256_baseline.pt \
 python count_params.py --config configs/baseline_1024.yaml
 python count_params.py --config configs/stable_1024_lowlr.yaml
 python count_params.py --config configs/stable_1024_ultralow.yaml
+python count_params.py --config configs/stable_1024_minlr.yaml
 
 # Generate individual PNGs for visual inspection or FID.
 python generate.py --ckpt runs/stable_1024_ultralow/final.pt \
@@ -245,7 +246,7 @@ python generate.py --ckpt runs/stable_1024_ultralow/final.pt \
                    --n 128 --batch-size 4
 
 # Compare checkpoints. Use a real validation image directory when available.
-python eval_checkpoints.py --ckpts runs/stable_1024_ultralow/ckpt_*.pt runs/stable_1024_lowlr/ckpt_*.pt \
+python eval_checkpoints.py --ckpts runs/stable_1024_minlr/ckpt_*.pt runs/stable_1024_ultralow/ckpt_*.pt runs/stable_1024_lowlr/ckpt_*.pt \
                            --real-zip data/valid_10k_1024.zip \
                            --out-dir eval_runs \
                            --n 5000 --batch-size 4
@@ -263,6 +264,9 @@ It keeps the stable architecture but lowers both G and D learning rates to
 `stable_1024_ultralow.yaml` is the current recommended 1024 experiment. It lowers
 both G and D learning rates further to `2e-5`, saves every 10k images, and is
 intended for selecting an early 1024 checkpoint before quality degrades.
+
+`stable_1024_minlr.yaml` is an even shorter follow-up around the observed early
+peak. It uses `1e-5`, saves every 5k images, and stops at 20k images.
 
 ## Resuming your own run
 
