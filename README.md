@@ -38,14 +38,14 @@ pip install -r requirements.txt
 python generate.py --ckpt ckpt/ffhq256_baseline.pt \
                            --out sample_256.png --n 64
 
-# 2. Fine-tune at 256 to verify your training loop works
-python train.py --config configs/baseline_256.yaml \
+# 2. Fine-tune at 256 conservatively, then keep the best 256 checkpoint
+python train.py --config configs/stable_256.yaml \
                        --init-from ckpt/ffhq256_baseline.pt
 
-# 3. Progressive scale-up. This package includes 512 / 1024 configs and
-#    train.py can warm-start the shared trunk from the 256 baseline.
+# 3. Progressive scale-up. Warm-start 512 from the best 256 checkpoint,
+#    then warm-start 1024 from the best 512 checkpoint.
 python train.py --config configs/stable_512.yaml \
-                       --init-from ckpt/ffhq256_baseline.pt
+                       --init-from runs/stable_256/final.pt
 python train.py --config configs/stable_1024_fadein.yaml \
                        --init-from runs/stable_512/final.pt
 ```
@@ -133,11 +133,15 @@ Suggested training order:
 # Stage 0: sanity-check the distributed baseline.
 python generate.py --ckpt ckpt/ffhq256_baseline.pt --n 64 --out sample_256.png
 
-# Stage 1: train 512 from the provided 256 baseline.
-python train.py --config configs/stable_512.yaml \
+# Stage 1: conservatively fine-tune 256 from the provided baseline.
+python train.py --config configs/stable_256.yaml \
                 --init-from ckpt/ffhq256_baseline.pt
 
-# Stage 2: train 1024 from the best 512 checkpoint.
+# Stage 2: train 512 from the best 256 checkpoint.
+python train.py --config configs/stable_512.yaml \
+                --init-from runs/stable_256/final.pt
+
+# Stage 3: train 1024 from the best 512 checkpoint.
 python train.py --config configs/stable_1024_fadein.yaml \
                 --init-from runs/stable_512/final.pt
 ```
