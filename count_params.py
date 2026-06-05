@@ -8,6 +8,7 @@ import torch
 import yaml
 
 from src.model import Discriminator, DiscriminatorConfig, build_generator, build_generator_config
+from src.refiner import load_refiner_chain_from_ckpt
 
 
 def count(module: torch.nn.Module) -> int:
@@ -30,6 +31,13 @@ def main() -> None:
         d_cfg = DiscriminatorConfig.from_dict(cfg["discriminator"])
     else:
         ckpt = torch.load(args.ckpt, map_location="cpu", weights_only=False)
+        if ckpt.get("model_type") == "refiner_chain":
+            G = load_refiner_chain_from_ckpt(args.ckpt, device="cpu", use_ema=True)
+            g_params = count(G)
+            print(f"Generator:     {g_params:,} ({g_params / 1e6:.2f}M)")
+            print("Discriminator: n/a (refiner checkpoint)")
+            print(f"G under 40M:   {g_params < 40_000_000}")
+            return
         meta = ckpt.get("meta", {})
         if "generator_config" not in meta or "discriminator_config" not in meta:
             raise SystemExit("Checkpoint does not contain meta.generator_config/discriminator_config")

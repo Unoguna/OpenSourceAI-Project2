@@ -21,6 +21,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.model import build_generator, build_generator_config, build_baseline_256_generator
+from src.refiner import load_refiner_chain_from_ckpt
 
 
 TARGET_RESOLUTION = 1024
@@ -87,6 +88,11 @@ def export_to_onnx(
 def _load_generator_from_ckpt(ckpt_path: Path) -> nn.Module:
     """Load G_ema from either the 256 baseline or a train.py checkpoint."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    if ckpt.get("model_type") == "refiner_chain":
+        G = load_refiner_chain_from_ckpt(ckpt_path, device="cpu", use_ema=True)
+        print(f"Architecture: refiner chain (target_res={G.target_resolution})")
+        print(f"Generator params: {sum(p.numel() for p in G.parameters())/1e6:.2f}M")
+        return G
     if "meta" in ckpt and isinstance(ckpt["meta"], dict) and "generator_config" in ckpt["meta"]:
         g_cfg = build_generator_config(ckpt["meta"]["generator_config"])
         G = build_generator(g_cfg)

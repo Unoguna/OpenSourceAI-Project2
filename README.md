@@ -1,13 +1,14 @@
 # FFHQ-256 baseline — student package
 
 This package contains everything you need to load the distributed 256×256
-baseline, sample from it, and fine-tune it up to 512 or 1024.
+baseline, sample from it, and train residual refiners up to 512 and 1024.
 
 ```
 ffhqgen_student/
 ├── README.md
 ├── requirements.txt
-├── train.py                       training loop (fine-tune the baseline, or resume)
+├── train.py                       full-generator GAN training loop
+├── train_refiner.py               frozen-baseline residual refiner training loop
 ├── generate.py                    sample grid from any ckpt
 ├── export_onnx.py                 leaderboard submission: (B,512) → (B,3,1024,1024)
 ├── ckpt/
@@ -38,16 +39,18 @@ pip install -r requirements.txt
 python generate.py --ckpt ckpt/ffhq256_baseline.pt \
                            --out sample_256.png --n 64
 
-# 2. Fine-tune at 256 conservatively, then keep the best 256 checkpoint
-python train.py --config configs/stable_256.yaml \
-                       --init-from ckpt/ffhq256_baseline.pt
+# 2. Train a 512 residual refiner on top of the frozen 256 baseline.
+python train_refiner.py --target-res 512 \
+                        --train-zip data/train_50k_512.zip \
+                        --g-ckpt ckpt/ffhq256_baseline.pt \
+                        --run-dir runs/refiner512
 
-# 3. Progressive scale-up. Warm-start 512 from the best 256 checkpoint,
-#    then warm-start 1024 from the best 512 checkpoint.
-python train.py --config configs/stable_512.yaml \
-                       --init-from runs/stable_256/final.pt
-python train.py --config configs/stable_1024_fadein.yaml \
-                       --init-from runs/stable_512/final.pt
+# 3. Train a 1024 residual refiner on top of the frozen 256+512 chain.
+python train_refiner.py --target-res 1024 \
+                        --train-zip data/train_50k_1024.zip \
+                        --g-ckpt ckpt/ffhq256_baseline.pt \
+                        --init-refiner runs/refiner512/final.pt \
+                        --run-dir runs/refiner1024
 ```
 
 ## Recommended Colab workflow
@@ -133,17 +136,18 @@ Suggested training order:
 # Stage 0: sanity-check the distributed baseline.
 python generate.py --ckpt ckpt/ffhq256_baseline.pt --n 64 --out sample_256.png
 
-# Stage 1: conservatively fine-tune 256 from the provided baseline.
-python train.py --config configs/stable_256.yaml \
-                --init-from ckpt/ffhq256_baseline.pt
+# Stage 1: learn a small 512 residual refiner.
+python train_refiner.py --target-res 512 \
+                        --train-zip data/train_50k_512.zip \
+                        --g-ckpt ckpt/ffhq256_baseline.pt \
+                        --run-dir runs/refiner512
 
-# Stage 2: train 512 from the best 256 checkpoint.
-python train.py --config configs/stable_512.yaml \
-                --init-from runs/stable_256/final.pt
-
-# Stage 3: train 1024 from the best 512 checkpoint.
-python train.py --config configs/stable_1024_fadein.yaml \
-                --init-from runs/stable_512/final.pt
+# Stage 2: learn a small 1024 residual refiner on top of the 512 chain.
+python train_refiner.py --target-res 1024 \
+                        --train-zip data/train_50k_1024.zip \
+                        --g-ckpt ckpt/ffhq256_baseline.pt \
+                        --init-refiner runs/refiner512/final.pt \
+                        --run-dir runs/refiner1024
 ```
 
 For the leaderboard submission, your trained model only has to satisfy the
@@ -241,18 +245,17 @@ python eval_checkpoints.py --ckpts ckpt/ffhq256_baseline.pt \
                            --out-dir eval_baseline_256 \
                            --n 1000 --batch-size 8 --clean
 
-# Check that a config stays under the 40M generator limit.
-python count_params.py --config configs/baseline_1024.yaml
-python count_params.py --config configs/stable_1024_fadein.yaml
+# Check that a refiner checkpoint stays under the 40M generator limit.
+python count_params.py --ckpt runs/refiner1024/final.pt
 
 # Generate individual PNGs for visual inspection or FID.
-python generate.py --ckpt runs/stable_1024_fadein/final.pt \
+python generate.py --ckpt runs/refiner1024/final.pt \
                    --out sample_grid.png \
-                   --out-dir eval_samples/stable_1024_fadein_final \
+                   --out-dir eval_samples/refiner1024_final \
                    --n 128 --batch-size 4
 
 # Compare checkpoints. Use a real validation image directory when available.
-python eval_checkpoints.py --ckpts runs/stable_1024_fadein/ckpt_*.pt \
+python eval_checkpoints.py --ckpts runs/refiner1024/refiner1024_*.pt \
                            --real-zip data/valid_10k_1024.zip \
                            --out-dir eval_runs \
                            --n 5000 --batch-size 4
@@ -262,10 +265,11 @@ python eval_checkpoints.py --ckpts runs/stable_1024_fadein/ckpt_*.pt \
 Use the best FID together with the saved sample grids for the final checkpoint
 choice.
 
-`stable_1024_fadein.yaml` is the recommended 1024 experiment. It freezes the
-copied 512-and-below generator trunk, trains the new 1024 block with TTUR, and
-uses progressive fade-in: the discriminator initially sees mostly the upsampled
-512 output, then gradually transitions to the native 1024 output.
+The recommended path is the residual refiner chain. The distributed 256
+generator is frozen, the 512 refiner learns a bounded residual correction over a
+bilinear 256->512 image, and the 1024 refiner repeats the same idea over the
+frozen 256+512 chain. This preserves the strong baseline face structure while
+letting the model learn dataset-specific high-resolution details.
 
 ## Resuming your own run
 

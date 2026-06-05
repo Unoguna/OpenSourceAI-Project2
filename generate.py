@@ -17,26 +17,39 @@ from src.model import (
     build_generator_config,
     build_baseline_256_generator,
 )
+from src.refiner import load_refiner_chain_from_ckpt
 
 
 def load_generator(ckpt_path: Path, device: str, use_ema: bool) -> torch.nn.Module:
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-    if "meta" in ckpt and isinstance(ckpt["meta"], dict) and "generator_config" in ckpt["meta"]:
+    if ckpt.get("model_type") == "refiner_chain":
+        G = load_refiner_chain_from_ckpt(ckpt_path, device=device, use_ema=use_ema)
+        target = getattr(G, "target_resolution", "?")
+        source_note = f"refiner_chain (target_res={target})"
+        weights_note = "refiner EMA" if use_ema else "refiner raw"
+    elif "meta" in ckpt and isinstance(ckpt["meta"], dict) and "generator_config" in ckpt["meta"]:
         g_cfg = build_generator_config(ckpt["meta"]["generator_config"])
         G = build_generator(g_cfg).to(device).eval()
         source_note = f"meta.generator_config (z_dim={g_cfg.z_dim}, max_res={g_cfg.resolutions[-1]})"
+        if use_ema and "G_ema_state" in ckpt:
+            G.load_state_dict(ckpt["G_ema_state"])
+            weights_note = "G_ema_state"
+        elif "G_state" in ckpt:
+            G.load_state_dict(ckpt["G_state"])
+            weights_note = "G_state"
+        else:
+            raise RuntimeError("Checkpoint contains neither G_ema_state nor G_state")
     else:
         G = build_baseline_256_generator().to(device).eval()
         source_note = "build_baseline_256_generator() (no meta in ckpt)"
-
-    if use_ema and "G_ema_state" in ckpt:
-        G.load_state_dict(ckpt["G_ema_state"])
-        weights_note = "G_ema_state"
-    elif "G_state" in ckpt:
-        G.load_state_dict(ckpt["G_state"])
-        weights_note = "G_state"
-    else:
-        raise RuntimeError("Checkpoint contains neither G_ema_state nor G_state")
+        if use_ema and "G_ema_state" in ckpt:
+            G.load_state_dict(ckpt["G_ema_state"])
+            weights_note = "G_ema_state"
+        elif "G_state" in ckpt:
+            G.load_state_dict(ckpt["G_state"])
+            weights_note = "G_state"
+        else:
+            raise RuntimeError("Checkpoint contains neither G_ema_state nor G_state")
 
     n_params = sum(p.numel() for p in G.parameters())
     print(f"Architecture: {source_note}")
