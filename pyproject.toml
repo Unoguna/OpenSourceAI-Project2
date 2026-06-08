@@ -1,0 +1,20 @@
+[project]
+name = "project02-ffhq-refiner"
+version = "0.1.0"
+description = "Project 02 FFHQ face generator with frozen baseline and residual refiners"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.1",
+    "torchvision>=0.16",
+    "numpy>=1.24",
+    "pillow>=10.0",
+    "pyyaml>=6.0",
+    "wandb>=0.16",
+    "onnx>=1.15",
+    "onnxruntime>=1.16",
+    "pytorch-fid",
+    "scipy",
+]
+
+[tool.setuptools]
+packages = ["src"]

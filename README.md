@@ -20,6 +20,12 @@ pip install -r requirements.txt
 pip install pytorch-fid scipy
 ```
 
+또는 제출 zip에 포함된 `pyproject.toml`을 사용해 설치할 수 있습니다.
+
+```bash
+pip install .
+```
+
 ONNX export와 검증을 위해 `onnx`, `onnxruntime`도 필요합니다. `requirements.txt`에 포함되어 있지만, 누락된 경우 아래처럼 설치할 수 있습니다.
 
 ```bash
