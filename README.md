@@ -1,285 +1,225 @@
-# FFHQ-256 baseline — student package
+# Project 02 - FFHQ 얼굴 생성 모델
 
-This package contains everything you need to load the distributed 256×256
-baseline, sample from it, and train residual refiners up to 512 and 1024.
+이 저장소는 Open Source AI Practice Project 02를 위한 얼굴 생성 모델 코드입니다.
+최종 모델은 제공된 `ffhq256_baseline.pt`의 256x256 generator를 고정하고, 512 및 1024 해상도용 residual refiner를 추가로 학습하는 방식입니다.
 
-```
-ffhqgen_student/
-├── README.md
-├── requirements.txt
-├── train.py                       full-generator GAN training loop
-├── train_refiner.py               frozen-baseline residual refiner training loop
-├── generate.py                    sample grid from any ckpt
-├── export_onnx.py                 leaderboard submission: (B,512) → (B,3,1024,1024)
-├── ckpt/
-│   └── ffhq256_baseline.pt        239 MB — G + D + G_ema state_dicts (slim)
-├── configs/
-│   └── baseline_256.yaml          starting config (matches the distributed ckpt)
-└── src/
-    ├── __init__.py
-    ├── model.py                   Generator / Discriminator / EMA / baseline builders
-    ├── losses.py                  non-saturating logistic + R1
-    ├── augment.py                 DiffAug (color / translation / cutout)
-    └── dataset.py                 zip-backed image dataset
-```
+최종 생성기는 다음 조건을 만족합니다.
 
-The baseline was trained on FFHQ (50k images) for 5.0M images at 256×256. It's
-intentionally **higher quality than "mediocre"** — your fine-tune starts from
-a non-trivial starting point so the work focuses on upscaling and refinement,
-not basic face structure.
+- 입력: `z` shape `(B, 512)`
+- 출력: image shape `(B, 3, 1024, 1024)`
+- 최종 checkpoint: `refiner1024_040000.pt`
+- 최종 FID: `56.137947`
+- generator parameter 수: 약 `21.42M`으로 40M 미만
 
-## Quick start
+## 1. 의존성 설치 방법
 
-Run everything from the package root (`ffhqgen_student/`):
+Python 3.10 이상과 CUDA 사용 가능한 PyTorch 환경을 권장합니다. Colab GPU 환경에서 실행하는 경우 아래 명령을 사용합니다.
 
 ```bash
 pip install -r requirements.txt
-
-# 1. Verify the baseline loads and samples
-python generate.py --ckpt ckpt/ffhq256_baseline.pt \
-                           --out sample_256.png --n 64
-
-# 2. Train a 512 residual refiner on top of the frozen 256 baseline.
-python train_refiner.py --target-res 512 \
-                        --train-zip data/train_50k_512.zip \
-                        --g-ckpt ckpt/ffhq256_baseline.pt \
-                        --run-dir runs/refiner512
-
-# 3. Train a 1024 residual refiner on top of the frozen 256+512 chain.
-python train_refiner.py --target-res 1024 \
-                        --train-zip data/train_50k_1024.zip \
-                        --g-ckpt ckpt/ffhq256_baseline.pt \
-                        --init-refiner runs/refiner512/final.pt \
-                        --run-dir runs/refiner1024
+pip install pytorch-fid scipy
 ```
 
-## Recommended Colab workflow
+ONNX export와 검증을 위해 `onnx`, `onnxruntime`도 필요합니다. `requirements.txt`에 포함되어 있지만, 누락된 경우 아래처럼 설치할 수 있습니다.
 
-Use GitHub for code and Google Drive for large files / experiment outputs.
-
-```text
-code    -> GitHub
-data    -> Google Drive
-execute -> Colab GPU
-edit    -> VS Code
+```bash
+pip install onnx onnxruntime
 ```
 
-1. Edit locally in VS Code.
-2. Commit and push to GitHub.
-3. Open `project02_colab.ipynb` in Colab.
-4. Set `REPO_URL`, `DATA_ROOT`, and run the notebook.
-5. Checkpoints, samples, FID results, and `submission.onnx` are written to
-   `MyDrive/project2_outputs`.
+## 2. 필요한 데이터 및 checkpoint
 
-The Colab notebook includes a WandB login cell. Create a free WandB account,
-run `wandb.login()` once per Colab runtime, and keep the run Overview page plus
-loss/sample screenshots for the report.
+대용량 데이터와 baseline checkpoint는 GitHub에 올리지 않고 Google Drive 또는 로컬 `data/`, `ckpt/` 폴더에 둡니다.
 
-In Colab, the notebook copies tracked YAML files into `runtime_configs/` before
-patching Drive paths. This keeps `configs/*.yaml` clean, so later `git pull`
-commands do not fail because of local config edits.
-
-Recommended Drive data layout:
+권장 구조:
 
 ```text
-MyDrive/project2_data/
-  train_50k_256.zip
+project2/
+  ckpt/
+    ffhq256_baseline.pt
+  data/
+    train_50k_512.zip
+    train_50k_1024.zip
+    valid_10k_512.zip
+    valid_10k_1024.zip
+```
+
+Colab에서는 다음과 같이 Drive 경로를 사용했습니다.
+
+```text
+/content/drive/MyDrive/project2_data/
+  ffhq256_baseline.pt
   train_50k_512.zip
   train_50k_1024.zip
-  valid_10k_256.zip
   valid_10k_512.zip
   valid_10k_1024.zip
-  ffhq256_baseline.pt
 ```
 
-The training configs use the 512 and 1024 training zips directly. FID evaluation
-uses `valid_10k_1024.zip`; `eval_checkpoints.py --real-zip ...` extracts it
-under the evaluation output directory before running `pytorch-fid`.
-The Colab notebook copies `ffhq256_baseline.pt` from Drive into
-`ckpt/ffhq256_baseline.pt` after cloning the GitHub repo.
+## 3. 모델 학습 방법
 
-## Architecture (`src/model.py`)
+최종 방식은 두 단계로 학습합니다.
 
-Config-driven ResNet GAN:
-- **Generator** 21.2M params: `z(512) → Linear → 4×4 → ResBlockUp×6 → 256×256`,
-  Group Norm, self-attention at 32×32, tanh output.
-- **Discriminator** 20.2M params: mirror of G with Spectral Norm everywhere,
-  MinibatchStd, no normalization layer in residual blocks.
-- **EMA**: half-life 10k images. `G_ema_state` is what you sample from for FID.
+1. 256 baseline generator를 고정하고 512 residual refiner 학습
+2. 512 refiner를 고정하고 1024 residual refiner 학습
 
-Extending to 512 or 1024 is a config change only — see below. This solution
-uses a conservative channel schedule 256:64, 512:32, 1024:16, which keeps the
-generator comfortably under the 40M-parameter hard threshold.
-
-## Scaling to 512 / 1024
-
-This is the core of the assignment — designing the additional up-block(s)
-that take 256→512 (and 512→1024), and the matching down-block(s) on D.
-Decide on your own:
-
-- **Block design.** ResBlockUp-style (NN-upsample + Conv + Conv)? Sub-pixel
-  conv? Transposed conv? Something else? `model.py` ships the baseline's
-  ResBlockUp / ResBlockDown, but you're not required to reuse them — the
-  assignment grades the resulting FID, not the architecture.
-- **Channels.** How many channels at 512 / 1024? Halving each step
-  (...256:64, 512:32, 1024:16) is a sensible default but not the only choice.
-
-
-`train.py --init-from ...` warm-starts from any compatible checkpoint. It copies
-only tensors whose names and shapes match the target generator, and remaps the
-discriminator's shared 256->4 stages when higher-resolution discriminator blocks
-are prepended. Newly-added 512 / 1024 blocks are randomly initialized.
-
-Suggested training order:
+### 3.1 Refiner 512 학습
 
 ```bash
-# Stage 0: sanity-check the distributed baseline.
-python generate.py --ckpt ckpt/ffhq256_baseline.pt --n 64 --out sample_256.png
-
-# Stage 1: learn a small 512 residual refiner.
-python train_refiner.py --target-res 512 \
-                        --train-zip data/train_50k_512.zip \
-                        --g-ckpt ckpt/ffhq256_baseline.pt \
-                        --run-dir runs/refiner512
-
-# Stage 2: learn a small 1024 residual refiner on top of the 512 chain.
-python train_refiner.py --target-res 1024 \
-                        --train-zip data/train_50k_1024.zip \
-                        --g-ckpt ckpt/ffhq256_baseline.pt \
-                        --init-refiner runs/refiner512/final.pt \
-                        --run-dir runs/refiner1024
+python train_refiner.py \
+  --target-res 512 \
+  --train-zip data/train_50k_512.zip \
+  --g-ckpt ckpt/ffhq256_baseline.pt \
+  --run-dir runs/refiner512 \
+  --steps 150000 \
+  --batch 8 \
+  --lr-r 2e-4 \
+  --lr-d 2e-4 \
+  --save-every 5000 \
+  --wandb-name refiner512 \
+  --wandb-mode online
 ```
 
-For the leaderboard submission, your trained model only has to satisfy the
-ONNX interface in `export_onnx.py` (input: `(B, 512)` z, output:
-`(B, 3, 1024, 1024)` image). Anything in between is up to you.
+### 3.2 Refiner 1024 학습
 
-## Training recipe (and why)
-
-The settings in `baseline_256.yaml` were arrived at after **three divergences**
-during the baseline run. Lessons:
-
-| Setting | Value | Lesson |
-|---|---|---|
-| `beta2` | **0.9** | 0.99 averages too long — when a gradient spike hits, Adam takes too long to adapt and the run blows up. |
-| `lr_g`, `lr_d` | both **1e-3** | TTUR (lower D lr) caused D under-training and mode collapse. Symmetric lr was stable. |
-| `r1_gamma` | **10** | Higher γ (20, 30) suppressed D learning too much. |
-| `augment` | `color,translation` | DiffAug **cutout 50%** was too aggressive — masked-out regions starved D. |
-| `precision` | **fp32** | bf16 trained fine for ~3M images then a late spike was easier to diagnose in fp32. Either works. |
-| `grad_clip_d` | 100 (effectively off) | D has Spectral Norm — already bounded; clipping is a no-op. |
-| `grad_clip_g` | 10 | Real protection on G — has caught grad spikes without distorting training. |
-
-### Measuring FID
-
-The leaderboard ranks by FID, so you may want a number to track. 
-
-- Dump a few thousand samples from your model (via `generate.py` in
-  a loop, or directly from the ONNX session) into a directory.
-- Use `pytorch-fid` (`pip install pytorch-fid`) on that directory vs a
-  directory of real images at the same resolution: `python -m pytorch_fid
-  <samples_dir> <real_dir>`. Cache the real-side Inception statistics with
-  `--save-stats` so subsequent FID runs only re-extract the fake side.
-- The leaderboard uses the same `pytorch-fid` Inception features, so this is
-  your honest self-check before submission.
-
-
-## Inference / sampling
+512 refiner 학습이 끝난 뒤, 가장 좋은 512 checkpoint를 `--init-refiner`로 넣어 1024 refiner를 학습합니다.
 
 ```bash
-# from the slim baseline ckpt
-python generate.py --ckpt ckpt/ffhq256_baseline.pt --n 64 --out grid.png
-
-# from your own fine-tune ckpt (auto-detects architecture from meta)
-python generate.py --ckpt runs/my_run/ckpt_001000000.pt --n 64
-
-# without EMA (raw G — usually noticeably worse)
-python generate.py --ckpt ckpt/ffhq256_baseline.pt --no-ema --n 64
+python train_refiner.py \
+  --target-res 1024 \
+  --train-zip data/train_50k_1024.zip \
+  --g-ckpt ckpt/ffhq256_baseline.pt \
+  --init-refiner runs/refiner512/final.pt \
+  --run-dir runs/refiner1024 \
+  --steps 80000 \
+  --batch 4 \
+  --lr-r 1e-4 \
+  --lr-d 1e-4 \
+  --save-every 5000 \
+  --wandb-name refiner1024 \
+  --wandb-mode online
 ```
 
-## Leaderboard submission (ONNX export)
-
-Every leaderboard entry exports a single ONNX file with this fixed interface:
-
-```
-input  z      shape (B, 512), dtype float32
-output image  shape (B, 3, 1024, 1024), dtype float32, range [-1, 1]
-```
-
-The `SubmissionWrapper` in `export_onnx.py` runs your Generator and
-resizes the output to 1024×1024 with bilinear interpolation — so 256-, 512-,
-and 1024-native models all submit through the same contract. The grader
-doesn't need to know your architecture.
-
-For the baseline 256 (sanity check the pipeline):
+학습을 중단했다가 이어서 실행하려면 `--resume` 옵션을 사용합니다.
 
 ```bash
-python export_onnx.py --ckpt ckpt/ffhq256_baseline.pt \
-                              --out submission.onnx
+python train_refiner.py \
+  --target-res 1024 \
+  --train-zip data/train_50k_1024.zip \
+  --g-ckpt ckpt/ffhq256_baseline.pt \
+  --init-refiner runs/refiner512/final.pt \
+  --run-dir runs/refiner1024 \
+  --resume runs/refiner1024/refiner1024_040000.pt \
+  --steps 80000
 ```
 
-For your own fine-tuned model, the CLI reads `meta.generator_config` from
-checkpoints saved by `train.py`:
+## 4. 노이즈에서 이미지 생성 방법
+
+`generate.py`는 512차원 Gaussian noise `z`를 샘플링한 뒤 checkpoint를 통해 이미지를 생성합니다.
+
+최종 checkpoint에서 16장 샘플 이미지를 생성하는 명령은 다음과 같습니다.
 
 ```bash
-python export_onnx.py --ckpt runs/pg_1024/final.pt --out submission.onnx
+python generate.py \
+  --ckpt runs/refiner1024/refiner1024_040000.pt \
+  --out sample_best_refiner.png \
+  --n 16 \
+  --nrow 4 \
+  --batch-size 4
 ```
 
-Verify locally with onnxruntime before submitting:
+FID 계산용으로 개별 PNG 파일을 저장하려면 `--out-dir`을 추가합니다.
+
+```bash
+python generate.py \
+  --ckpt runs/refiner1024/refiner1024_040000.pt \
+  --out sample_grid.png \
+  --out-dir eval_samples/refiner1024_040000 \
+  --n 10000 \
+  --batch-size 4
+```
+
+## 5. FID 평가 방법
+
+여러 checkpoint를 비교하려면 `eval_checkpoints.py`를 사용합니다.
+
+```bash
+python eval_checkpoints.py \
+  --ckpts runs/refiner1024/refiner1024_010000.pt runs/refiner1024/refiner1024_040000.pt \
+  --real-zip data/valid_10k_1024.zip \
+  --out-dir eval_refiner_final \
+  --n 10000 \
+  --batch-size 4 \
+  --clean
+```
+
+평가 결과는 아래 파일에 저장됩니다.
+
+```text
+eval_refiner_final/fid_results.csv
+```
+
+최종 제출에 사용한 checkpoint는 다음입니다.
+
+```text
+runs/refiner1024/refiner1024_040000.pt
+```
+
+## 6. ONNX export 방법
+
+최종 제출용 ONNX 파일은 다음 명령으로 생성합니다.
+
+```bash
+python export_onnx.py \
+  --ckpt runs/refiner1024/refiner1024_040000.pt \
+  --out submission.onnx \
+  --batch-size 1
+```
+
+export 결과는 다음 조건을 만족해야 합니다.
+
+```text
+input  z      (B, 512)
+output image  (B, 3, 1024, 1024)
+```
+
+ONNX Runtime으로 간단히 검증하는 예시는 다음과 같습니다.
 
 ```python
-import numpy as np, onnxruntime as ort
-sess = ort.InferenceSession("submission.onnx")
-out = sess.run(None, {"z": np.random.randn(4, 512).astype(np.float32)})[0]
-assert out.shape == (4, 3, 1024, 1024)
+import numpy as np
+import onnxruntime as ort
+
+sess = ort.InferenceSession("submission.onnx", providers=["CPUExecutionProvider"])
+z = np.random.randn(1, 512).astype(np.float32)
+out = sess.run(None, {"z": z})[0]
+
+print(out.shape, out.dtype, out.min(), out.max())
+assert out.shape == (1, 3, 1024, 1024)
 ```
 
-## Checkpoint selection for a higher score
+## 7. 코드 구성
 
-GAN quality is not monotonic, so compare several checkpoints instead of blindly
-submitting the final one.
-
-```bash
-# Sanity-check the provided baseline with the same local FID pipeline.
-python eval_checkpoints.py --ckpts ckpt/ffhq256_baseline.pt \
-                           --real-zip data/valid_10k_1024.zip \
-                           --out-dir eval_baseline_256 \
-                           --n 1000 --batch-size 8 --clean
-
-# Check that a refiner checkpoint stays under the 40M generator limit.
-python count_params.py --ckpt runs/refiner1024/final.pt
-
-# Generate individual PNGs for visual inspection or FID.
-python generate.py --ckpt runs/refiner1024/final.pt \
-                   --out sample_grid.png \
-                   --out-dir eval_samples/refiner1024_final \
-                   --n 128 --batch-size 4
-
-# Compare checkpoints. Use a real validation image directory when available.
-python eval_checkpoints.py --ckpts runs/refiner1024/refiner1024_*.pt \
-                           --real-zip data/valid_10k_1024.zip \
-                           --out-dir eval_runs \
-                           --n 5000 --batch-size 4
+```text
+src/model.py       기본 FFHQ-256 generator/discriminator 구조
+src/refiner.py     residual refiner 및 refiner chain 구현
+train_refiner.py   512/1024 refiner 학습 코드
+generate.py        noise z에서 이미지 생성
+eval_checkpoints.py checkpoint별 샘플 생성 및 FID 평가
+export_onnx.py     최종 ONNX export
+count_params.py    generator parameter 수 확인
 ```
 
-`eval_runs/fid_results.csv` is sorted by FID when `--real-dir` is supplied.
-Use the best FID together with the saved sample grids for the final checkpoint
-choice.
+## 8. 최종 모델 요약
 
-The recommended path is the residual refiner chain. The distributed 256
-generator is frozen, the 512 refiner learns a bounded residual correction over a
-bilinear 256->512 image, and the 1024 refiner repeats the same idea over the
-frozen 256+512 chain. This preserves the strong baseline face structure while
-letting the model learn dataset-specific high-resolution details.
+최종 모델은 다음 흐름으로 이미지를 생성합니다.
 
-## Resuming your own run
-
-`train.py --resume` restores G/D/G_ema/optimizers/RNG/wandb run id, so an
-interrupted run continues bit-for-bit:
-
-```bash
-python train.py --config configs/baseline_256.yaml \
-                       --resume runs/my_run/ckpt_001000000.pt
+```text
+z noise (B, 512)
+  -> frozen FFHQ-256 generator
+  -> 256x256 image
+  -> bilinear upsample to 512
+  -> residual refiner 512
+  -> bilinear upsample to 1024
+  -> residual refiner 1024
+  -> output image (B, 3, 1024, 1024)
 ```
 
-Do not mix `--init-from` and `--resume` — `--init-from` is for the *first*
-launch of a fine-tune, `--resume` is for continuing an in-progress one.
+baseline generator는 고정하고, trainable generator component인 residual refiner와 discriminator를 함께 adversarial하게 학습했습니다. 이 방식은 baseline의 얼굴 구조를 보존하면서 고해상도 질감만 보정하므로 1024 단계에서의 불안정성을 줄일 수 있었습니다.
